@@ -1,0 +1,42 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# # Vagrant 1.7+ automatically inserts a different
+# # insecure keypair for each new VM created. The easiest way
+# # to use the same keypair for all the machines is to disable
+# # this feature and rely on the legacy insecure key.
+# # config.ssh.insert_key = false
+Vagrant.configure("2") do |config|
+    # Every Vagrant development environment requires a box. You can search for
+    # boxes at https://atlas.hashicorp.com/search.
+    config.vm.box = "hashicorp/precise64"
+
+    # Common domain configuration
+    config.vm.provider "virtualbox" do |domain|
+	domain.customize ["modifyvm", :id, "--nic2", "hostonly"]
+        domain.customize ["modifyvm", :id, "--hostonlyadapter2", "vboxnet1"]
+    end
+
+    # Machine-specific definition
+    config.vm.define :d1vm0 do |vmconfig|
+        vmconfig.vm.hostname = "d1vm0"
+        vmconfig.vm.network :private_network, ip: "172.16.76.2"
+	vmconfig.vm.network :forwarded_port, guest: 80, host: 81 			# This is the HTTPD load balancer VM for this domain 
+        vmconfig.vm.network :forwarded_port, guest: 22, host: 10122, id: "ssh"		# This avoid SSH overlaping port in the host 
+	vmconfig.vm.provider "virtualbox" do |vbox|
+            vbox.customize ["modifyvm", :id, "--memory", "4096"]
+  	    vbox.customize ["modifyvm", :id, "--name", "d1vm0"]
+        end
+    end
+
+    # Machine-specific definition
+    config.vm.define :d1vm1 do |vmconfig|
+        vmconfig.vm.hostname = "d1vm1"
+        vmconfig.vm.network :private_network, ip: "172.16.76.3"
+        vmconfig.vm.network :forwarded_port, guest: 22, host: 10123, id: "ssh"       	# This avoid SSH overlaping port in the host
+        vmconfig.vm.provider "virtualbox" do |vbox|
+            vbox.customize ["modifyvm", :id, "--memory", "2048"]
+            vbox.customize ["modifyvm", :id, "--name", "d1vm1"]
+        end
+    end
+end
