@@ -1,0 +1,8 @@
+hosts: [
+    { host_ip: "172.16.76.2", host_name: "d1vm0"},
+    { host_ip: "172.16.76.3", host_name: "d1vm1"}
+]
+
+obsolete_services:
+  - puppet
+  - chef-client
