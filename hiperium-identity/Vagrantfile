@@ -11,6 +11,13 @@ Vagrant.configure("2") do |config|
     # boxes at https://atlas.hashicorp.com/search.
     config.vm.box = "ubuntu/trusty64"
 
+    # Synced folder configuration 
+    if (/cygwin|mswin|mingw|bccwin|wince|emx/ =~ RUBY_PLATFORM) != nil
+        config.vm.synced_folder ".", "/vagrant", mount_options: ["dmode=700,fmode=600"]
+    else
+        config.vm.synced_folder ".", "/vagrant"
+    end
+
     # Common domain configuration
     config.vm.provider "virtualbox" do |domain|
 	domain.customize ["modifyvm", :id, "--nic2", "hostonly"]
@@ -18,27 +25,28 @@ Vagrant.configure("2") do |config|
     end
 
     # Machine-balancer specific definition
-    config.vm.define :d1Balancer do |vmconfig|
-        vmconfig.vm.hostname = "d1Balancer"
+    config.vm.define "identity-balancer" do |vmconfig|
+        vmconfig.vm.hostname = "identity-balancer"
         vmconfig.vm.network :private_network, ip: "172.16.76.2"
-	vmconfig.vm.network :forwarded_port, host: 8180,  guest: 80 		# This is the HTTPD load balancer VM for this domain 
+	vmconfig.vm.network :forwarded_port, host: 8081,  guest: 80 		# This is the HTTPD load balancer VM for this domain 
         vmconfig.vm.network :forwarded_port, host: 10122, guest: 22, id: "ssh"	# This avoid SSH overlaping port in the host 
 	vmconfig.vm.provider "virtualbox" do |vbox|
             vbox.customize ["modifyvm", :id, "--memory", "2048"]
-  	    vbox.customize ["modifyvm", :id, "--name"  , "d1Balancer"]
+  	    vbox.customize ["modifyvm", :id, "--name"  , "identity-balancer"]
         end
-        vmconfig.vm.provision :shell, path: "bootstrap.sh"			# Install HTTPD via shell provisioning
+        vmconfig.vm.provision :shell, path: "bootstrap.sh"			# Install HTTPD and Ansible via shell provisioning
+        vmconfig.vm.provision :shell, inline: "PYTHONUNBUFFERED=1 ansible-playbook /vagrant/ansible/balancer.yml -c local"
     end
 
     # Machine-nodes specific definition
     (1..2).each do |i|
-	config.vm.define "d1Node#{i}" do |vmconfig|
-            vmconfig.vm.hostname = "d1Node#{i}"
+	config.vm.define "identity-node#{i}" do |vmconfig|
+            vmconfig.vm.hostname = "identity-node#{i}"
             vmconfig.vm.network :private_network, ip: "172.16.76.#{2+i}"
             vmconfig.vm.network :forwarded_port, host: "1012#{2+i}", guest: 22, id: "ssh"  # This avoid SSH overlaping port in the host
             vmconfig.vm.provider "virtualbox" do |vbox|
             	vbox.customize ["modifyvm", :id, "--memory", "2048"]
-            	vbox.customize ["modifyvm", :id, "--name"  , "d1Node#{i}"]
+            	vbox.customize ["modifyvm", :id, "--name"  , "identity-node#{i}"]
             end
         end
     end
