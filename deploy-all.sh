@@ -1,6 +1,6 @@
 #!/bin/bash
+set -e
 ./create-virtual-networks.sh
+echo "Create Identity Domain"
 cd hiperium-identity/
-vagrant up
-cd ../hiperium-messaging/
-vagrant up
+./deploy-domain.sh

@@ -1,5 +1,6 @@
 #!/bin/bash
 # This script creates all libvirt network for all Hiperium Services
+set -e
 
 echo "Create Hiperium Identity Virtual Network"
 VBoxManage hostonlyif create
