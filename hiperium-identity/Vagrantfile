@@ -7,6 +7,7 @@
 # # this feature and rely on the legacy insecure key.
 # # config.ssh.insert_key = false
 Vagrant.configure("2") do |config|
+
     # Every Vagrant development environment requires a box. You can search for
     # boxes at https://atlas.hashicorp.com/search.
     config.vm.box = "ubuntu/trusty64"
@@ -27,15 +28,14 @@ Vagrant.configure("2") do |config|
     # Machine-balancer specific definition
     config.vm.define "identity-balancer" do |vmconfig|
         vmconfig.vm.hostname = "identity-balancer"
-        vmconfig.vm.network :private_network, ip: "172.16.76.2"
+        vmconfig.vm.network :private_network, ip: "172.16.76.2"			# The .1 IP address its often used by router
 	vmconfig.vm.network :forwarded_port, host: 8081,  guest: 80 		# This is the HTTPD load balancer VM for this domain 
         vmconfig.vm.network :forwarded_port, host: 10122, guest: 22, id: "ssh"	# This avoid SSH overlaping port in the host 
 	vmconfig.vm.provider "virtualbox" do |vbox|
             vbox.customize ["modifyvm", :id, "--memory", "2048"]
   	    vbox.customize ["modifyvm", :id, "--name"  , "identity-balancer"]
         end
-        vmconfig.vm.provision :shell, path: "bootstrap.sh"			# Install HTTPD and Ansible via shell provisioning
-        vmconfig.vm.provision :shell, inline: "PYTHONUNBUFFERED=1 ansible-playbook /vagrant/ansible/balancer.yml -c local"
+        vmconfig.vm.provision :shell, path: "balancer-config/bootstrap.sh"	# Install HTTPD and Ansible via shell provisioning
     end
 
     # Machine-nodes specific definition
@@ -43,19 +43,18 @@ Vagrant.configure("2") do |config|
 	config.vm.define "identity-node#{i}" do |vmconfig|
             vmconfig.vm.hostname = "identity-node#{i}"
             vmconfig.vm.network :private_network, ip: "172.16.76.#{2+i}"
-            vmconfig.vm.network :forwarded_port, host: "808#{1+i}", guest: 8080  	   # Forward to Wildfly application port
- 	    vmconfig.vm.network :forwarded_port, host: "919#{1+i}", guest: 9990            # Forward to Wildfly management port
+            vmconfig.vm.network :forwarded_port, host: "818#{i}", guest: 8080  	   	   # Forward to Wildfly application port
+ 	    vmconfig.vm.network :forwarded_port, host: "919#{i}", guest: 9990              # Forward to Wildfly management port
             vmconfig.vm.network :forwarded_port, host: "1012#{2+i}", guest: 22, id: "ssh"  # This avoid SSH overlaping port in the host
             vmconfig.vm.provider "virtualbox" do |vbox|
             	vbox.customize ["modifyvm", :id, "--memory", "2048"]
             	vbox.customize ["modifyvm", :id, "--name"  , "identity-node#{i}"]
             end
-            config.vm.provision "shell", inline:
-		"sudo apt-get update"
+            vmconfig.vm.provision "shell", path: "nodes-config/bootstrap.sh"	# Install WILDFLY via shell provisioning
         end
     end
 
-    # Put the VM Box in Vagrant Cache for future references
+    # Put the VM in Vagrant Cache
     if Vagrant.has_plugin?("vagrant-cachier")
     	config.cache.scope = :box
     end
