@@ -22,33 +22,33 @@ Vagrant.configure("2") do |config|
     # Common domain configuration
     config.vm.provider "virtualbox" do |domain|
 	domain.customize ["modifyvm", :id, "--nic2", "hostonly"]
-        domain.customize ["modifyvm", :id, "--hostonlyadapter2", "vboxnet1"]
+        domain.customize ["modifyvm", :id, "--hostonlyadapter2", "vboxnet5"]
     end
 
     # Machine-balancer specific definition
-    config.vm.define "identity-balancer" do |vmconfig|
-        vmconfig.vm.hostname = "identity-balancer"
-        vmconfig.vm.network :private_network, ip: "172.16.76.2", netmask: "28"	# The .1 IP address its often used by router
-	vmconfig.vm.network :forwarded_port, host: 8081,  guest: 80 		# This is the HTTPD load balancer VM for this domain 
-        vmconfig.vm.network :forwarded_port, host: 10122, guest: 22, id: "ssh"	# This avoid SSH overlaping port in the host 
+    config.vm.define "prod-identity-balancer" do |vmconfig|
+        vmconfig.vm.hostname = "prod-identity-balancer"
+        vmconfig.vm.network :private_network, ip: "172.16.76.130", netmask: "28" # The .129 IP address its often used by router
+	vmconfig.vm.network :forwarded_port, host: 10522, guest: 22, id: "ssh"   # This avoid SSH overlaping port in the host
+	vmconfig.vm.network :forwarded_port, host: 8580,  guest: 80 		 # This is the HTTPD load balancer VM for this domain
 	vmconfig.vm.provider "virtualbox" do |vbox|
             vbox.customize ["modifyvm", :id, "--memory", "2048"]
-  	    vbox.customize ["modifyvm", :id, "--name"  , "identity-balancer"]
+  	    vbox.customize ["modifyvm", :id, "--name"  , "prod-identity-balancer"]
         end
         vmconfig.vm.provision :shell, path: "balancer-config/bootstrap.sh"	# Install HTTPD and Ansible via shell provisioning
     end
 
     # Machine-nodes specific definition
     (1..2).each do |i|
-	config.vm.define "identity-node#{i}" do |vmconfig|
-            vmconfig.vm.hostname = "identity-node#{i}"
-            vmconfig.vm.network :private_network, ip: "172.16.76.#{2+i}", netmask: "28"
-            vmconfig.vm.network :forwarded_port, host: "818#{i}", guest: 8080  	   	   # Forward to Wildfly application port
- 	    vmconfig.vm.network :forwarded_port, host: "919#{i}", guest: 9990              # Forward to Wildfly management port
-            vmconfig.vm.network :forwarded_port, host: "1012#{2+i}", guest: 22, id: "ssh"  # This avoid SSH overlaping port in the host
+	config.vm.define "prod-identity-node#{i}" do |vmconfig|
+            vmconfig.vm.hostname = "prod-identity-node#{i}"
+            vmconfig.vm.network :private_network, ip: "172.16.76.#{130+i}", netmask: "28"
+	    vmconfig.vm.network :forwarded_port, host: "1052#{2+i}", guest: 22, id: "ssh"  # This avoid SSH overlaping port in the host
+            vmconfig.vm.network :forwarded_port, host: "858#{i}", guest: 8080  	   	   # Forward to Wildfly application port
+ 	    vmconfig.vm.network :forwarded_port, host: "959#{i}", guest: 9990              # Forward to Wildfly management port
             vmconfig.vm.provider "virtualbox" do |vbox|
             	vbox.customize ["modifyvm", :id, "--memory", "2048"]
-            	vbox.customize ["modifyvm", :id, "--name"  , "identity-node#{i}"]
+            	vbox.customize ["modifyvm", :id, "--name"  , "prod-identity-node#{i}"]
             end
             vmconfig.vm.provision "shell", privileged: false, inline: <<-SHELL
 		echo "Installing Open JDK 8 ..."
@@ -59,24 +59,29 @@ Vagrant.configure("2") do |config|
 		sudo rm -rf /var/cache/oracle-jdk8-installer
 		export JAVA_HOME="/usr/lib/jvm/java-8-oracle"
 
-		echo "Installing and starting Wildfly App Server 10.0.0.Final ..."
+		echo "Installing and configuring Wildfly App Server 10.0.0.Final ..."
 		export WILDFLY_VERSION="10.0.0.Final"
 		curl https://download.jboss.org/wildfly/$WILDFLY_VERSION/wildfly-$WILDFLY_VERSION.tar.gz | tar -xz
-		sudo mkdir /opt/jboss/
-		export JBOSS_HOME="/opt/jboss/wildfly"
+		export JBOSS_HOME="/opt/wildfly"
 		sudo mv wildfly-$WILDFLY_VERSION $JBOSS_HOME
-		sudo chown -R vagrant:vagrant $JBOSS_HOME
-		$JBOSS_HOME/bin/add-user.sh admin Admin123 --silent
-		cp -f /vagrant/nodes-config/standalone-ha.xml $JBOSS_HOME/standalone/configuration/
-                cp -r /vagrant/nodes-config/postgresql $JBOSS_HOME/system/layers/base/org/
-		IP_ADDR=$(ip addr show eth1 | grep "inet\b" | awk '{print $2}' | cut -d/ -f1)
-		sed -i "s|jboss.bind.address.management:127.0.0.1|jboss.bind.address.management:$IP_ADDR|g" $JBOSS_HOME/standalone/configuration/standalone-ha.xml
-		sed -i "s|jboss.bind.address:127.0.0.1|jboss.bind.address:$IP_ADDR|g" $JBOSS_HOME/standalone/configuration/standalone-ha.xml
-		sed -i "s|jboss.bind.address.private:127.0.0.1|jboss.bind.address.private:$IP_ADDR|g" $JBOSS_HOME/standalone/configuration/standalone-ha.xml
-		$JBOSS_HOME/bin/standalone.sh --server-config=standalone-ha.xml -b=0.0.0.0 -bmanagement=$IP_ADDR -Djboss.node.name=identity-node"#{i}"
+		sudo JBOSS_HOME/bin/add-user.sh admin Admin123 --silent
+		sudo cp -f /vagrant/nodes-config/wildfly.conf /etc/default/wildfly
+	        sudo cp -f /vagrant/nodes-config/wildfly-init-debian.sh /etc/init.d/wildfly
+	        sudo cp -f /vagrant/nodes-config/wildfly-upstart.conf /etc/init/
+		sudo cp -r /vagrant/nodes-config/postgresql $JBOSS_HOME/modules/system/layers/base/org/
+		sudo cp -f /vagrant/nodes-config/standalone-ha.xml $JBOSS_HOME/standalone/configuration/
+		export IP_ADDR=172.16.76.#{130+i}
+		sudo sed -i "s|jboss.bind.address.management:127.0.0.1|jboss.bind.address.management:$IP_ADDR|g" $JBOSS_HOME/standalone/configuration/standalone-ha.xml
+		sudo sed -i "s|jboss.bind.address:127.0.0.1|jboss.bind.address:$IP_ADDR|g" $JBOSS_HOME/standalone/configuration/standalone-ha.xml
+		sudo sed -i "s|jboss.bind.address.private:127.0.0.1|jboss.bind.address.private:$IP_ADDR|g" $JBOSS_HOME/standalone/configuration/standalone-ha.xml
+		sudo sed -i "s|-bmanagement=127.0.0.1|-bmanagement=$IP_ADDR|g" /etc/default/wildfly
+		sudo sed -i "s|-Djboss.node.name=127.0.0.1|-Djboss.node.name=identity-node#{i}|g" /etc/default/wildfly
+		sudo useradd -r -s /bin/false wildfly
+	        sudo chown -R wildfly:wildfly $JBOSS_HOME
 
 		echo "Deploying Hiperium Identity Service ..."
-		curl -u admin:admin123 -L "http://repository-hiperium.rhcloud.com/service/local/artifact/maven/content?g=com.hiperium&a=hiperium-identity&v=LATEST&p=war&r=snapshots" -o $JBOSS_HOME/standalone/deployments/hiperium-identity.war
+		sudo -u wildfly bash -c 'curl -u admin:admin123 -L "http://repository-hiperium.rhcloud.com/service/local/artifact/maven/content?g=com.hiperium&a=hiperium-identity&v=LATEST&p=war&r=snapshots" -o /opt/wildfly/standalone/deployments/hiperium-identity.war'
+		sudo service wildfly start
             SHELL
         end
     end
